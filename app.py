@@ -4,7 +4,11 @@ import joblib
 import plotly.express as px
 import os
 
-st.set_page_config(page_title="Wholesale Customer Spending Analysis", layout="wide")
+# ---------------- PAGE CONFIG ----------------
+st.set_page_config(
+    page_title="Wholesale Customer Spending Analysis",
+    layout="wide"
+)
 st.title("Wholesale Customer Spending Analysis Dashboard")
 
 # ---------------- LOAD MODEL ----------------
@@ -22,14 +26,16 @@ for path in MODEL_PATHS:
         break
 
 if model is None:
-    st.error("❌ model.pkl not found.")
+    st.error("❌ model.pkl not found")
     st.stop()
 
 scaler = model["scaler"]
 pca = model["pca"]
 kmeans = model["kmeans"]
 feature_columns = model["feature_columns"]
-df = model["training_data"]  # ✅ FROM MODEL
+
+# ---------------- OPTIONAL TRAINING DATA ----------------
+df = model.get("training_data", None)
 
 # ---------------- TABS ----------------
 tab1, tab2, tab3, tab4 = st.tabs([
@@ -39,43 +45,67 @@ tab1, tab2, tab3, tab4 = st.tabs([
     "🧮 Predict Customer Cluster"
 ])
 
-# ---------------- TAB 1 ----------------
+# ---------------- TAB 1: DATA OVERVIEW ----------------
 with tab1:
-    st.subheader("Dataset Overview")
-    st.dataframe(df.head(), use_container_width=True)
-    st.write(df.describe())
+    if df is None:
+        st.warning("Training dataset not embedded in model.pkl")
+        st.info("This section is disabled")
+    else:
+        st.dataframe(df.head(), use_container_width=True)
+        st.write(df.describe())
 
-# ---------------- TAB 2 ----------------
+# ---------------- TAB 2: CLUSTER VISUALIZATION ----------------
 with tab2:
-    scaled_data = scaler.transform(df)
-    X = pd.DataFrame(scaled_data, columns=df.columns)[feature_columns]
-    X_pca = pca.transform(X)
-    clusters = kmeans.predict(X_pca)
+    if df is None:
+        st.warning("Clustering visualization unavailable without training data")
+    else:
+        scaled_data = scaler.transform(df)
+        X = pd.DataFrame(scaled_data, columns=df.columns)[feature_columns]
+        X_pca = pca.transform(X)
+        clusters = kmeans.predict(X_pca)
 
-    cluster_df = pd.DataFrame(X_pca, columns=["PC1", "PC2", "PC3"])
-    cluster_df["Cluster"] = clusters.astype(str)
+        cluster_df = pd.DataFrame(X_pca, columns=["PC1", "PC2", "PC3"])
+        cluster_df["Cluster"] = clusters.astype(str)
 
-    fig = px.scatter_3d(cluster_df, x="PC1", y="PC2", z="PC3", color="Cluster")
-    st.plotly_chart(fig, use_container_width=True)
+        fig = px.scatter_3d(
+            cluster_df,
+            x="PC1",
+            y="PC2",
+            z="PC3",
+            color="Cluster",
+            title="3D KMeans Customer Segmentation"
+        )
+        st.plotly_chart(fig, use_container_width=True)
 
-# ---------------- TAB 3 ----------------
+# ---------------- TAB 3: PCA ----------------
 with tab3:
-    fig_pca = px.scatter_3d(cluster_df, x="PC1", y="PC2", z="PC3", color="Cluster")
-    st.plotly_chart(fig_pca, use_container_width=True)
-    st.write("Explained Variance Ratio:", pca.explained_variance_ratio_)
+    if df is None:
+        st.warning("PCA visualization unavailable without training data")
+    else:
+        fig_pca = px.scatter_3d(
+            cluster_df,
+            x="PC1",
+            y="PC2",
+            z="PC3",
+            color="Cluster",
+            title="PCA Components (3D)"
+        )
+        st.plotly_chart(fig_pca, use_container_width=True)
+        st.write("Explained Variance Ratio:", pca.explained_variance_ratio_)
 
-# ---------------- TAB 4 ----------------
+# ---------------- TAB 4: PREDICTION ----------------
 with tab4:
-    user_input = {
-        col: st.number_input(col, min_value=0.0, value=float(df[col].median()))
-        for col in df.columns
-    }
+    st.subheader("Predict Customer Cluster")
+
+    user_input = {}
+    for col in feature_columns:
+        user_input[col] = st.number_input(col, min_value=0.0, value=0.0)
 
     input_df = pd.DataFrame([user_input])
 
     if st.button("Predict Cluster"):
         scaled_input = scaler.transform(input_df)
-        X_input = pd.DataFrame(scaled_input, columns=df.columns)[feature_columns]
+        X_input = pd.DataFrame(scaled_input, columns=feature_columns)
         input_pca = pca.transform(X_input)
         cluster = kmeans.predict(input_pca)
-        st.success(f"Predicted Cluster: {cluster[0]}")
+        st.success(f"✅ Predicted Customer Cluster: **{cluster[0]}**")
