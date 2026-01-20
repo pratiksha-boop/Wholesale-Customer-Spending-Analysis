@@ -1,4 +1,4 @@
-joblib
+plotly
 joblib
 pandas
 scikit-learn
