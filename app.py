@@ -1,111 +1,133 @@
 import streamlit as st
+import pickle
 import pandas as pd
-import joblib
 import plotly.express as px
-import os
 
-# ---------------- PAGE CONFIG ----------------
+# -----------------------------
+# Page config
+# -----------------------------
 st.set_page_config(
-    page_title="Wholesale Customer Spending Analysis",
+    page_title="Wholesale Customer Segmentation",
     layout="wide"
 )
-st.title("Wholesale Customer Spending Analysis Dashboard")
 
-# ---------------- LOAD MODEL ----------------
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+# -----------------------------
+# Load artifacts
+# -----------------------------
+@st.cache_resource
+def load_artifacts():
+    with open("artifacts.pkl", "rb") as f:
+        return pickle.load(f)
 
-MODEL_PATHS = [
-    os.path.join(BASE_DIR, "model", "model.pkl"),
-    os.path.join(BASE_DIR, "model.pkl")
-]
+artifacts = load_artifacts()
 
-model = None
-for path in MODEL_PATHS:
-    if os.path.exists(path):
-        model = joblib.load(path)
-        break
+df = artifacts["data"]
+df_kmeans = artifacts["data_kmeans"]
+preprocessor = artifacts["preprocessor"]
+kmeans = artifacts["kmeans"]
+hierarchical = artifacts["hierarchical"]
+X_pca = artifacts["X_pca"]
 
-if model is None:
-    st.error("❌ model.pkl not found")
-    st.stop()
+cluster_profile_mean = artifacts["cluster_profile_mean"]
+cluster_profile_median = artifacts["cluster_profile_median"]
+cluster_counts = artifacts["cluster_counts"]
 
-scaler = model["scaler"]
-pca = model["pca"]
-kmeans = model["kmeans"]
-feature_columns = model["feature_columns"]
+# -----------------------------
+# Title
+# -----------------------------
+st.title("Wholesale Customer Segmentation – Unsupervised Learning")
 
-# ---------------- OPTIONAL TRAINING DATA ----------------
-df = model.get("training_data", None)
-
-# ---------------- TABS ----------------
-tab1, tab2, tab3, tab4 = st.tabs([
-    "📊 Data Overview",
-    "🧩 KMeans Clustering",
-    "📉 PCA Analysis",
-    "🧮 Predict Customer Cluster"
+tabs = st.tabs([
+    "Dataset Overview",
+    "K-Means Clustering (3D)",
+    "Cluster Analysis",
+    "Predict Customer Cluster"
 ])
 
-# ---------------- TAB 1: DATA OVERVIEW ----------------
-with tab1:
-    if df is None:
-        st.warning("Training dataset not embedded in model.pkl")
-        st.info("This section is disabled")
-    else:
-        st.dataframe(df.head(), use_container_width=True)
-        st.write(df.describe())
+# -----------------------------
+# TAB 1: Dataset Overview
+# -----------------------------
+with tabs[0]:
+    st.subheader("Dataset Preview")
+    st.dataframe(df.head())
 
-# ---------------- TAB 2: CLUSTER VISUALIZATION ----------------
-with tab2:
-    if df is None:
-        st.warning("Clustering visualization unavailable without training data")
-    else:
-        scaled_data = scaler.transform(df)
-        X = pd.DataFrame(scaled_data, columns=df.columns)[feature_columns]
-        X_pca = pca.transform(X)
-        clusters = kmeans.predict(X_pca)
+    st.subheader("Dataset Shape")
+    st.write(df.shape)
 
-        cluster_df = pd.DataFrame(X_pca, columns=["PC1", "PC2", "PC3"])
-        cluster_df["Cluster"] = clusters.astype(str)
+    st.subheader("Summary Statistics")
+    st.dataframe(df.describe())
 
-        fig = px.scatter_3d(
-            cluster_df,
-            x="PC1",
-            y="PC2",
-            z="PC3",
-            color="Cluster",
-            title="3D KMeans Customer Segmentation"
-        )
-        st.plotly_chart(fig, use_container_width=True)
+# -----------------------------
+# TAB 2: K-Means 3D Visualization
+# -----------------------------
+with tabs[1]:
+    st.subheader("3D K-Means Clusters (PCA Reduced)")
 
-# ---------------- TAB 3: PCA ----------------
-with tab3:
-    if df is None:
-        st.warning("PCA visualization unavailable without training data")
-    else:
-        fig_pca = px.scatter_3d(
-            cluster_df,
-            x="PC1",
-            y="PC2",
-            z="PC3",
-            color="Cluster",
-            title="PCA Components (3D)"
-        )
-        st.plotly_chart(fig_pca, use_container_width=True)
-        st.write("Explained Variance Ratio:", pca.explained_variance_ratio_)
+    pca_df = pd.DataFrame(
+        X_pca,
+        columns=["PC1", "PC2", "PC3"]
+    )
+    pca_df["Cluster"] = df_kmeans["KMeans_Cluster"].astype(str)
 
-# ---------------- TAB 4: PREDICTION ----------------
-with tab4:
-    st.subheader("Predict Customer Cluster")
+    fig = px.scatter_3d(
+        pca_df,
+        x="PC1",
+        y="PC2",
+        z="PC3",
+        color="Cluster",
+        opacity=0.8
+    )
 
-    user_input = {}
-    for col in feature_columns:
-        user_input[col] = st.number_input(col, min_value=0.0, value=0.0)
+    st.plotly_chart(fig, use_container_width=True)
 
-    input_df = pd.DataFrame([user_input])
+# -----------------------------
+# TAB 3: Cluster Analysis
+# -----------------------------
+with tabs[2]:
+    st.subheader("Cluster Size Distribution")
+    st.bar_chart(cluster_counts)
+
+    st.subheader("Mean Spending per Cluster")
+    st.dataframe(cluster_profile_mean)
+
+    st.subheader("Median Spending per Cluster")
+    st.dataframe(cluster_profile_median)
+
+# -----------------------------
+# TAB 4: Predict Cluster
+# -----------------------------
+with tabs[3]:
+    st.subheader("Predict K-Means Cluster for a New Customer")
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        fresh = st.number_input("Fresh", min_value=0.0)
+        milk = st.number_input("Milk", min_value=0.0)
+        grocery = st.number_input("Grocery", min_value=0.0)
+        frozen = st.number_input("Frozen", min_value=0.0)
+
+    with col2:
+        detergents = st.number_input("Detergents_Paper", min_value=0.0)
+        delicassen = st.number_input("Delicassen", min_value=0.0)
+        channel = st.selectbox("Channel", [1, 2])
+        region = st.selectbox("Region", [1, 2, 3])
 
     if st.button("Predict Cluster"):
-        scaled_input = scaler.transform(input_df)
-        X_input = pd.DataFrame(scaled_input, columns=feature_columns)
-        input_pca = pca.transform(X_input)
-        cluster = kmeans.predict(input_pca)
-        st.success(f"✅ Predicted Customer Cluster: **{cluster[0]}**")
+        input_df = pd.DataFrame([{
+            "Fresh": fresh,
+            "Milk": milk,
+            "Grocery": grocery,
+            "Frozen": frozen,
+            "Detergents_Paper": detergents,
+            "Delicassen": delicassen,
+            "Channel": channel,
+            "Region": region
+        }])
+
+        processed_input = preprocessor.transform(input_df)
+        cluster = kmeans.predict(processed_input)[0]
+
+        st.success(f"Predicted K-Means Cluster: {cluster}")
+        st.write("Average Spending Pattern for this Cluster:")
+        st.dataframe(cluster_profile_mean.loc[[cluster]])
