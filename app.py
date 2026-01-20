@@ -13,17 +13,26 @@ st.set_page_config(
 
 st.title("Wholesale Customer Spending Analysis Dashboard")
 
-# ---------------- PATHS ----------------
+# ---------------- PATH HANDLING ----------------
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-MODEL_PATH = os.path.join(BASE_DIR, "model", "model.pkl")
+
+MODEL_PATHS = [
+    os.path.join(BASE_DIR, "model", "model.pkl"),  # preferred
+    os.path.join(BASE_DIR, "model.pkl")             # fallback
+]
+
 DATA_PATH = os.path.join(BASE_DIR, "data", "project9_wholesale dataset.csv")
 
 # ---------------- LOAD MODEL ----------------
-if not os.path.exists(MODEL_PATH):
-    st.error("❌ model.pkl not found. Please check the model folder path.")
-    st.stop()
+model = None
+for path in MODEL_PATHS:
+    if os.path.exists(path):
+        model = joblib.load(path)
+        break
 
-model = joblib.load(MODEL_PATH)
+if model is None:
+    st.error("❌ model.pkl not found. Ensure it is committed to the repository.")
+    st.stop()
 
 scaler = model["scaler"]
 pca = model["pca"]
@@ -50,7 +59,7 @@ with tab1:
     st.subheader("Dataset Overview")
     st.dataframe(df.head(), use_container_width=True)
 
-    st.write("**Shape of Dataset**")
+    st.write("**Dataset Shape**")
     st.write(df.shape)
 
     st.write("**Statistical Summary**")
@@ -60,7 +69,6 @@ with tab1:
 with tab2:
     st.subheader("3D KMeans Clustering")
 
-    # Scale data
     scaled_data = scaler.transform(df)
     scaled_df = pd.DataFrame(scaled_data, columns=df.columns)
 
